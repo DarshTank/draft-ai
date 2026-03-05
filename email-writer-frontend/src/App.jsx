@@ -16,6 +16,16 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 
+// OPTIMIZATION 1: Move Tailwind injection outside the component.
+// This ensures the browser starts fetching the styles the moment the JavaScript is parsed, 
+// rather than waiting for React to mount the component first.
+if (typeof window !== 'undefined' && !document.getElementById('tailwind-cdn')) {
+  const script = document.createElement("script");
+  script.id = "tailwind-cdn";
+  script.src = "https://cdn.tailwindcss.com";
+  document.head.appendChild(script);
+}
+
 /**
  * Custom Logo Component
  */
@@ -51,6 +61,10 @@ const ThreeBackground = () => {
   const mountRef = useRef(null);
 
   useEffect(() => {
+    // Check if ref is available
+    if (!mountRef.current) return;
+
+    let requestID;
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -60,7 +74,7 @@ const ThreeBackground = () => {
     mountRef.current.appendChild(renderer.domElement);
 
     const particles = new THREE.BufferGeometry();
-    const count = 1200;
+    const count = 1200; // Consider lowering to 800 if it's still heavy on older devices
     const pos = new Float32Array(count * 3);
     for (let i = 0; i < count * 3; i++) pos[i] = (Math.random() - 0.5) * 15;
     particles.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -103,7 +117,8 @@ const ThreeBackground = () => {
     window.addEventListener('mousemove', onMove);
 
     const animate = () => {
-      requestAnimationFrame(animate);
+      // OPTIMIZATION 2: Store the request animation frame ID for cancellation
+      requestID = requestAnimationFrame(animate);
       points.rotation.y += 0.0004;
       spheres.forEach(s => {
         s.rotation.y += s.userData.rot;
@@ -124,10 +139,22 @@ const ThreeBackground = () => {
     };
     window.addEventListener('resize', onResize);
 
+    // OPTIMIZATION 3: Proper Cleanup to prevent memory leaks and ghost rendering loops
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('resize', onResize);
-      mountRef.current?.removeChild(renderer.domElement);
+      cancelAnimationFrame(requestID); 
+      
+      if (mountRef.current && renderer.domElement) {
+        mountRef.current.removeChild(renderer.domElement);
+      }
+      
+      // Dispose of Three.js objects from memory
+      particles.dispose();
+      partMat.dispose();
+      sphereGeo.dispose();
+      spheres.forEach(s => s.material.dispose());
+      renderer.dispose();
     };
   }, []);
 
@@ -142,16 +169,6 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-
-  // Injects Tailwind CDN
-  useEffect(() => {
-    if (!document.getElementById('tailwind-cdn')) {
-      const script = document.createElement("script");
-      script.id = "tailwind-cdn";
-      script.src = "https://cdn.tailwindcss.com";
-      document.head.appendChild(script);
-    }
-  }, []);
 
   // --- Original API Logic ---
   const handleSubmit = async () => {
